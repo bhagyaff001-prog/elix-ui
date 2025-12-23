@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ELIX — Astra 2.5</title>
+
+<style>
+/* ====== UI (UNCHANGED) ====== */
+:root {
+  --primary-cyan:#00ffd5;
+  --bg-dark:#05070b;
+  --glass:rgba(15,25,35,.95);
+  --border:rgba(255,255,255,.12)
+}
+*{box-sizing:border-box;font-family:Segoe UI,system-ui,sans-serif;-webkit-tap-highlight-color:transparent}
+body{
+  margin:0;height:100vh;background:#000;color:#e8fefe;
+  display:flex;justify-content:center;align-items:center;overflow:hidden
+}
+.app-shell{
+  width:100%;max-width:450px;height:100%;
+  background:radial-gradient(circle at top,#0a1a25 0%,#05070b 100%);
+  display:flex;flex-direction:column;position:relative
+}
+.header{padding:60px 20px 20px;text-align:center}
+.header h1{
+  margin:0;font-size:38px;letter-spacing:6px;font-weight:900;
+  text-shadow:0 0 20px rgba(0,255,213,.3)
+}
+.header p{
+  margin:8px 0 0;font-size:11px;text-transform:uppercase;
+  letter-spacing:4px;color:var(--primary-cyan)
+}
+.main{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:20px;position:relative
+}
+.visualizer{display:flex;gap:6px;height:50px;margin-bottom:40px;visibility:hidden}
+.visualizer.active{visibility:visible}
+.bar{
+  width:4px;height:12px;background:var(--primary-cyan);
+  border-radius:4px;animation:pulse .6s infinite
+}
+@keyframes pulse{
+  0%,100%{height:10px;opacity:.5}
+  50%{height:40px;opacity:1;box-shadow:0 0 15px var(--primary-cyan)}
+}
+.mic-outer{
+  width:130px;height:130px;border-radius:50%;
+  background:rgba(0,255,213,.05);
+  display:flex;align-items:center;justify-content:center;
+  border:1px solid var(--border)
+}
+.mic-btn{
+  width:90px;height:90px;border-radius:50%;
+  background:radial-gradient(circle,var(--primary-cyan),#00bfa5);
+  border:none;cursor:pointer;
+  box-shadow:0 0 30px rgba(0,255,213,.2);
+  display:flex;align-items:center;justify-content:center
+}
+.mic-btn svg{width:40px;height:40px;fill:#003030}
+.listening .mic-btn{animation:ring 1.5s infinite}
+@keyframes ring{
+  0%{box-shadow:0 0 0 0 rgba(0,255,213,.6)}
+  70%{box-shadow:0 0 0 40px rgba(0,255,213,0)}
+  100%{box-shadow:0 0 0 0 rgba(0,255,213,0)}
+}
+.label{
+  margin-top:30px;font-size:12px;letter-spacing:2px;
+  color:rgba(255,255,255,.4);text-transform:uppercase;font-weight:bold
+}
+.overlay-card{
+  position:absolute;bottom:0;left:0;right:0;
+  background:var(--glass);
+  backdrop-filter:blur(25px);
+  border-top:1px solid var(--border);
+  border-radius:30px 30px 0 0;
+  padding:30px 25px 60px;
+  transform:translateY(100%);
+  transition:.4s ease;
+  z-index:100;max-height:65vh;overflow-y:auto
+}
+.overlay-card.show{transform:translateY(0)}
+.close-handle{
+  width:40px;height:4px;background:rgba(255,255,255,.2);
+  border-radius:2px;margin:-10px auto 20px
+}
+.tag{
+  font-size:10px;color:var(--primary-cyan);
+  font-weight:bold;letter-spacing:2px;margin-bottom:12px
+}
+.text{font-size:17px;line-height:1.6;color:#fff}
+</style>
+</head>
+
+<body>
+<div class="app-shell">
+  <div class="header">
+    <h1>ELIX</h1>
+    <p>Born to Rise</p>
+  </div>
+
+  <div class="main">
+    <div class="visualizer" id="viz">
+      <div class="bar"></div><div class="bar"></div>
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div>
+    </div>
+
+    <div class="mic-outer" id="mic-container">
+      <button class="mic-btn" id="mic-trigger">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+          <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="label" id="hint">TAP TO CONNECT</div>
+  </div>
+
+  <div class="overlay-card" id="card">
+    <div class="close-handle" onclick="card.classList.remove('show')"></div>
+    <div class="tag" id="status-tag">NEURAL STREAM</div>
+    <div class="text" id="ai-text">Connecting...</div>
+  </div>
+</div>
+
+<script>
+/* ====== PROXY CONFIG (SECURE) ====== */
+const PROXY_URL = "https://gemini-proxy-nine-lilac.vercel.app/api/gemini";
+
+/* ====== UI HOOKS ====== */
+const micBtn = document.getElementById("mic-trigger");
+const micCont = document.getElementById("mic-container");
+const viz = document.getElementById("viz");
+const card = document.getElementById("card");
+const aiText = document.getElementById("ai-text");
+const hint = document.getElementById("hint");
+const tag = document.getElementById("status-tag");
+
+/* ====== SPEECH ====== */
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = SpeechRec ? new SpeechRec() : null;
+
+function cleanText(t){return t.replace(/[#*`_~]/g,"").trim()}
+function detectLang(t){return /[\u0900-\u097F]/.test(t)?"hi-IN":"en-US"}
+
+/* ====== MIC ====== */
+if(!recognition){
+  hint.innerText="BROWSER UNSUPPORTED";
+}else{
+  micBtn.onclick=()=>{speechSynthesis.cancel();try{recognition.start()}catch{}}
+  recognition.onstart=()=>{
+    micCont.classList.add("listening");
+    viz.classList.add("active");
+    hint.innerText="LISTENING...";
+  }
+  recognition.onend=()=>micCont.classList.remove("listening");
+  recognition.onresult=e=>handleQuery(e.results[0][0].transcript);
+}
+
+/* ====== MAIN LOGIC ====== */
+async function handleQuery(query){
+  card.classList.add("show");
+  aiText.innerText="Thinking...";
+  tag.innerText="ELIX CORE";
+
+  /* Bug-based instant replies */
+  if(/creator|developer|who made you/i.test(query)){
+    return respond("Bhagya Ganju is my creator and developer. I am ELIX Astra.");
+  }
+
+  try{
+    const res=await fetch(PROXY_URL,{
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body:JSON.stringify({ message: query })
+    });
+    const data=await res.json();
+    if(!data.reply) throw "No reply";
+    respond(data.reply);
+  }catch{
+    tag.innerText="SYSTEM ERROR";
+    aiText.innerText="Unable to connect to Gemini.";
+  }
+}
+
+/* ====== OUTPUT ====== */
+function respond(msg){
+  tag.innerText="ELIX RESPONSE";
+  aiText.innerText=msg;
+  hint.innerText="TAP TO SPEAK";
+
+  const s=new SpeechSynthesisUtterance(cleanText(msg));
+  s.lang=detectLang(msg);
+  s.onstart=()=>viz.classList.add("active");
+  s.onend=()=>viz.classList.remove("active");
+  speechSynthesis.speak(s);
+}
+</script>
+</body>
+</html>
